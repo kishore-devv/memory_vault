@@ -1,22 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'notes_page.dart';
-import 'signup_page.dart';
+import 'login_page.dart';
 
-class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+class SignUpPage extends StatefulWidget {
+  const SignUpPage({super.key});
 
   @override
-  State<LoginPage> createState() => _LoginPageState();
+  State<SignUpPage> createState() => _SignUpPageState();
 }
 
-class _LoginPageState extends State<LoginPage> {
+class _SignUpPageState extends State<SignUpPage> {
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
 
-  // Professional color scheme (same as SignUpPage)
+  // Professional color scheme
   final Color primaryColor = const Color(0xFF6366F1); // Indigo
   final Color secondaryColor = const Color(0xFF8B5CF6); // Violet
   final Color backgroundColor = const Color(0xFFF8FAFC); // Slate 50
@@ -24,61 +23,61 @@ class _LoginPageState extends State<LoginPage> {
   final Color textColor = const Color(0xFF1E293B); // Slate 800
   final Color subtitleColor = const Color(0xFF64748B); // Slate 500
 
-  Future<void> _login() async {
+  Future<void> _signup() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() {
       _isLoading = true;
     });
 
-    print('=== LOGIN PROCESS STARTED ===');
+    print('=== SIGNUP PROCESS STARTED ===');
     print('Email: ${emailController.text}');
+    print('Password length: ${passwordController.text.length} characters');
     
     try {
-      print('Attempting to login with Supabase...');
+      print('Attempting to sign up with Supabase...');
       
-      await Supabase.instance.client.auth.signInWithPassword(
+      await Supabase.instance.client.auth.signUp(
         email: emailController.text.trim(),
         password: passwordController.text,
       );
 
-      print('✅ Login successful!');
+      print('✅ Sign up successful!');
       
       if (!mounted) {
         print('❌ Widget not mounted, returning early');
         return;
       }
       
-      print('Navigating to NotesPage...');
+      print('Navigating to LoginPage...');
       Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const NotesPage()),
+        context, 
+        MaterialPageRoute(builder: (_) => const LoginPage())
       );
       print('✅ Navigation completed');
       
     } catch (e) {
-      print('❌ LOGIN ERROR: $e');
+      print('❌ SIGNUP ERROR: $e');
       print('Error type: ${e.runtimeType}');
       
       if (!mounted) return;
       
+      print('Showing error snackbar...');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(e.toString()),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-        ),
+        )
       );
+      print('✅ Error snackbar displayed');
     } finally {
       if (mounted) {
         setState(() {
           _isLoading = false;
         });
       }
-      print('=== LOGIN PROCESS COMPLETED ===');
+      print('=== SIGNUP PROCESS COMPLETED ===');
     }
   }
 
@@ -135,7 +134,7 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'Welcome Back',
+                          'Create Account',
                           style: TextStyle(
                             fontSize: isSmallScreen ? 28 : 32,
                             fontWeight: FontWeight.bold,
@@ -145,7 +144,7 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Sign in to your AI note-taking assistant',
+                          'Join your AI-powered note-taking assistant',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: isSmallScreen ? 16 : 18,
@@ -214,47 +213,23 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                             validator: (value) {
                               if (value == null || value.isEmpty) {
-                                return 'Please enter your password';
+                                return 'Please enter a password';
+                              }
+                              if (value.length < 6) {
+                                return 'Password must be at least 6 characters';
                               }
                               return null;
                             },
                           ),
 
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 30),
 
-                          // Forgot Password (Optional - you can implement this later)
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: TextButton(
-                              onPressed: () {
-                                // Implement forgot password functionality
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Forgot password feature coming soon!'),
-                                    backgroundColor: primaryColor,
-                                  ),
-                                );
-                              },
-                              style: TextButton.styleFrom(
-                                foregroundColor: primaryColor,
-                              ),
-                              child: Text(
-                                'Forgot Password?',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          ),
-
-                          const SizedBox(height: 24),
-
-                          // Login Button
+                          // Sign Up Button
                           SizedBox(
                             width: double.infinity,
                             height: 56,
                             child: ElevatedButton(
-                              onPressed: _isLoading ? null : _login,
+                              onPressed: _isLoading ? null : _signup,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: primaryColor,
                                 foregroundColor: Colors.white,
@@ -278,14 +253,14 @@ class _LoginPageState extends State<LoginPage> {
                                       mainAxisAlignment: MainAxisAlignment.center,
                                       children: [
                                         Text(
-                                          'Sign In',
+                                          'Create Account',
                                           style: TextStyle(
                                             fontSize: 16,
                                             fontWeight: FontWeight.w600,
                                           ),
                                         ),
                                         const SizedBox(width: 8),
-                                        Icon(Icons.arrow_forward_rounded, size: 20, color: Colors.white,),
+                                        Icon(Icons.arrow_forward_rounded, size: 20),
                                       ],
                                     ),
                             ),
@@ -302,7 +277,7 @@ class _LoginPageState extends State<LoginPage> {
                               Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: 16),
                                 child: Text(
-                                  'New to our app?',
+                                  'Already have an account?',
                                   style: TextStyle(
                                     color: subtitleColor,
                                     fontSize: 14,
@@ -317,7 +292,7 @@ class _LoginPageState extends State<LoginPage> {
 
                           const SizedBox(height: 24),
 
-                          // Sign Up Button
+                          // Login Button
                           SizedBox(
                             width: double.infinity,
                             height: 56,
@@ -327,7 +302,7 @@ class _LoginPageState extends State<LoginPage> {
                                   : () {
                                       Navigator.pushReplacement(
                                         context,
-                                        MaterialPageRoute(builder: (_) => const SignUpPage()),
+                                        MaterialPageRoute(builder: (_) => const LoginPage()),
                                       );
                                     },
                               style: OutlinedButton.styleFrom(
@@ -339,7 +314,7 @@ class _LoginPageState extends State<LoginPage> {
                                 padding: const EdgeInsets.symmetric(horizontal: 24),
                               ),
                               child: Text(
-                                'Create Account',
+                                'Sign In Instead',
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,
