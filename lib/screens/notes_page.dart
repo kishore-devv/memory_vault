@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:memory_vault/screens/note_detail_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'add_note_page.dart';
 import 'login_page.dart';
@@ -272,6 +273,13 @@ class _NotesPageState extends State<NotesPage> {
           borderRadius: BorderRadius.circular(16),
           onTap: () {
             // TODO: Implement note detail view or edit
+
+            Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NoteDetailPage(note: note),
+      ),
+    ).then((_) => setState(() {})); // Refresh after return
           },
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -290,9 +298,9 @@ class _NotesPageState extends State<NotesPage> {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-
+    
                 const SizedBox(height: 8),
-
+    
                 // Note Content Preview
                 Expanded(
                   child: Text(
@@ -306,9 +314,9 @@ class _NotesPageState extends State<NotesPage> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-
+    
                 const SizedBox(height: 12),
-
+    
                 // Date and AI Badge
                 Row(
                   children: [
