@@ -12,24 +12,15 @@ class MemoryService {
   // Singleton pattern
   static final MemoryService _instance = MemoryService._internal();
   factory MemoryService() => _instance;
-  MemoryService._internal() {
-    // Print available models on init to debug "Not Found" errors
-    _diagnoseApiKey();
-  }
+  MemoryService._internal();
 
-  Future<void> _diagnoseApiKey() async {
-    String apiKey = Config.googleApiKey;
-    if (apiKey.contains('PASTE_YOUR'))
-      apiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
+  String? _cachedModelName;
 
-    if (apiKey.isEmpty ||
-        apiKey.contains('YOUR_') ||
-        apiKey.contains('PASTE_YOUR')) {
-      debugPrint("❌ DIAGNOSTIC: No API Key found.");
-      return;
-    }
+  /// Dynamically fetch the first available Gemini model from the API
+  Future<String> _fetchWorkingModel(String apiKey) async {
+    if (_cachedModelName != null) return _cachedModelName!;
 
-    debugPrint("🔍 DIAGNOSTIC: Testing API Key permissions...");
+    debugPrint("🔍 Finding available Gemini models...");
     try {
       final client = HttpClient();
       final request = await client.getUrl(
@@ -38,38 +29,77 @@ class MemoryService {
         ),
       );
       final response = await request.close();
-
-      final responseBody = await response.transform(utf8.decoder).join();
-
       if (response.statusCode == 200) {
-        debugPrint("✅ DIAGNOSTIC: API Key is VALID. Models available.");
-        debugPrint("📋 MODEL LIST: $responseBody");
+        final responseBody = await response.transform(utf8.decoder).join();
+        final json = jsonDecode(responseBody);
+        final models = json['models'] as List;
+
+        // Find first model that supports generateContent
+        for (var m in models) {
+          final name = m['name'].toString(); // e.g. "models/gemini-1.5-flash"
+          final supportedMethods = m['supportedGenerationMethods'] as List;
+
+          if (name.contains('gemini') &&
+              supportedMethods.contains('generateContent')) {
+            // Strip "models/" prefix if present, although SDK might handle it.
+            // But let's be safe and try to respect what SDK usually expects.
+            // Actually SDK usually takes "gemini-1.5-flash".
+            // But if we pass "models/gemini-1.5-flash", it might work too.
+            // Safest: Use the exact name returned by API but strip "models/" if SDK behaves oddly.
+            // Let's rely on the fact that standard named constructors use short names,
+            // but generic constructor takes model name.
+
+            // If name is "models/gemini-...", let's keep it as is,
+            // because our previous hardcoded "gemini-..." failed.
+            // Maybe it failed because it expects "models/"?
+            // Or maybe it failed because "1.5-flash" wasn't there.
+
+            debugPrint("✅ Found working model: $name");
+            _cachedModelName =
+                name.startsWith('models/') ? name.substring(7) : name;
+            return _cachedModelName!;
+          }
+        }
       } else {
-        debugPrint("❌ DIAGNOSTIC: API Error ${response.statusCode}");
-        debugPrint("❌ RESPONSE: $responseBody");
-        // This log puts the EXACT Google error in the console for the user to see
+        debugPrint("❌ Failed to list models: ${response.statusCode}");
       }
     } catch (e) {
-      debugPrint("❌ DIAGNOSTIC: Network Error: $e");
+      debugPrint("❌ Error listing models: $e");
     }
+
+    // Fallback if list fails
+    return 'gemini-1.5-flash';
   }
 
-  /// Generates an embedding for the given text using Gemini API
-  Future<List<double>> _generateEmbedding(String text) async {
+  /// Helper to get API Key with fallback priority
+  String _getApiKey() {
     // Priority: Config -> .env
     String apiKey = Config.googleApiKey;
-    if (apiKey.contains('PASTE_YOUR')) {
-      apiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
+    debugPrint("DEBUG: Config.googleApiKey = '$apiKey'");
+
+    if (apiKey.isEmpty || apiKey.contains('PASTE_YOUR')) {
+      final envKey = dotenv.env['GEMINI_API_KEY'];
+      debugPrint(
+        "DEBUG: dotenv.env['GEMINI_API_KEY'] = '${envKey?.substring(0, 5)}...'",
+      ); // Masked for security
+      apiKey = envKey ?? '';
     }
 
     if (apiKey.isEmpty ||
         apiKey.contains('YOUR_') ||
         apiKey.contains('PASTE_YOUR')) {
+      debugPrint("DEBUG: Final API Key check failed. apiKey='$apiKey'");
       throw Exception("API Key missing in .env and Config!");
     }
+    return apiKey;
+  }
+
+  /// Generates an embedding for the given text using Gemini API
+  Future<List<double>> _generateEmbedding(String text) async {
+    final apiKey = _getApiKey();
 
     try {
-      // Use 'text-embedding-004' to avoid "Quota exceeded" on the older model
+      // Use 'text-embedding-004' for embeddings
       final model = GenerativeModel(
         model: 'text-embedding-004',
         apiKey: apiKey,
@@ -121,15 +151,11 @@ class MemoryService {
   /// Ask a question to the user's Memory Vault
   Stream<String> askQuestion(String question) async* {
     // Priority: Config -> .env
-    String apiKey = Config.googleApiKey;
-    if (apiKey.contains('PASTE_YOUR')) {
-      apiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
-    }
-
-    if (apiKey.isEmpty ||
-        apiKey.contains('YOUR_') ||
-        apiKey.contains('PASTE_YOUR')) {
-      yield "Error: No Valid API Key found (Checked .env and Config).";
+    String apiKey;
+    try {
+      apiKey = _getApiKey();
+    } catch (e) {
+      yield "Error: No Valid API Key found. Please check .env or Config.";
       return;
     }
 
@@ -156,37 +182,40 @@ User Question: $question
 """;
 
     // 3. Call Gemini for Answer
-    try {
-      // Attempt 1: "gemini-flash-latest" (Safe alias for the current stable Flash)
-      final model = GenerativeModel(
-        model: 'gemini-flash-latest',
-        apiKey: apiKey,
-      );
-      final content = [Content.text(prompt)];
-      final response = model.generateContentStream(content);
+    // 3. Call Gemini for Answer with Retry Logic
+    int attempt = 0;
+    const maxRetries = 3;
 
-      await for (final chunk in response) {
-        if (chunk.text != null) yield chunk.text!;
-      }
-    } catch (e) {
-      // Attempt 2: "gemini-2.0-flash-exp" (Experimental often has free quota)
-      debugPrint("Flash Latest failed, switching to Exp: $e");
+    while (attempt < maxRetries) {
       try {
-        final model = GenerativeModel(
-          model: 'gemini-2.0-flash-exp',
-          apiKey: apiKey,
-        );
+        attempt++;
+        // Find a working model dynamically
+        final modelName = await _fetchWorkingModel(apiKey);
+        if (attempt == 1) debugPrint("🤖 Using Gemini Model: $modelName");
+
+        final model = GenerativeModel(model: modelName, apiKey: apiKey);
         final content = [Content.text(prompt)];
         final response = model.generateContentStream(content);
 
         await for (final chunk in response) {
           if (chunk.text != null) yield chunk.text!;
         }
-      } catch (e2) {
-        yield "Error: AI Service Unavailable. ($e2)";
-        debugPrint("Exp failed too: $e2");
+        return; // Success!
+      } catch (e) {
+        debugPrint("AI Generation failed (Attempt $attempt/$maxRetries): $e");
+
+        // If overloaded, wait and retry. otherwise fail.
+        final errorStr = e.toString().toLowerCase();
+        if (errorStr.contains('overloaded') || errorStr.contains('503')) {
+          yield "API Overloaded. Retrying... (Attempt $attempt/$maxRetries)";
+          await Future.delayed(Duration(seconds: 2 * attempt)); // 2s, 4s, 6s
+        } else {
+          yield "Error: AI Service Unavailable. ($e)";
+          return;
+        }
       }
     }
+    yield "Error: Service overloaded after $maxRetries attempts. Please try again later.";
   }
 
   /// Initial Fetch of recent memories (no vector search yet, just list)

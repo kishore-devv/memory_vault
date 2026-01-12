@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:memory_vault/pages/auth_page.dart';
+import 'package:memory_vault/pages/login_page.dart';
 import 'package:memory_vault/pages/home_page.dart';
+import 'package:memory_vault/pages/onboarding_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -12,14 +14,10 @@ Future<void> main() async {
   try {
     await dotenv.load(fileName: ".env");
   } catch (e) {
-    // If .env is missing or invalid, we won't crash here but Supabase init might fail
-    // if keys aren't provided. We'll handle that gracefully or let it crash with a clear message.
     debugPrint('Error loading .env: $e');
   }
 
   // Initialize Supabase
-  // Note: We use empty strings as fallback to prevent crash during hot-reload
-  // if .env is missing, but app requires them to work.
   await Supabase.initialize(
     url: dotenv.env['SUPABASE_URL'] ?? '',
     anonKey: dotenv.env['SUPABASE_ANON_KEY'] ?? '',
@@ -44,7 +42,7 @@ class MyApp extends StatelessWidget {
           secondary: Color(0xFF03DAC6),
           onPrimary: Colors.black,
         ),
-        textTheme: GoogleFonts.interTextTheme(
+        textTheme: GoogleFonts.outfitTextTheme(
           Theme.of(context).textTheme.apply(
             bodyColor: Colors.white,
             displayColor: Colors.white,
@@ -60,26 +58,45 @@ class MyApp extends StatelessWidget {
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
 
+  Future<bool> _hasSeenOnboarding() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('seenOnboarding') ?? false;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<AuthState>(
-      stream: Supabase.instance.client.auth.onAuthStateChange,
-      builder: (context, snapshot) {
-        // Prepare for loading state
-        if (snapshot.connectionState == ConnectionState.waiting) {
+    return FutureBuilder<bool>(
+      future: _hasSeenOnboarding(),
+      builder: (context, onboardingSnapshot) {
+        if (onboardingSnapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
 
-        // Check session
-        final session = snapshot.data?.session;
-
-        if (session != null) {
-          return const HomePage();
-        } else {
-          return const AuthPage();
+        // 1. Check Onboarding
+        if (!(onboardingSnapshot.data ?? false)) {
+          return const OnboardingPage();
         }
+
+        // 2. Check Auth Session
+        return StreamBuilder<AuthState>(
+          stream: Supabase.instance.client.auth.onAuthStateChange,
+          builder: (context, authSnapshot) {
+            if (authSnapshot.connectionState == ConnectionState.waiting) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
+
+            final session = authSnapshot.data?.session;
+            if (session != null) {
+              return const HomePage();
+            } else {
+              return const LoginPage();
+            }
+          },
+        );
       },
     );
   }

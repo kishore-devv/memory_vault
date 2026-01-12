@@ -41,7 +41,8 @@ dependencies:
   hooks_riverpod: ^3.0.3
   flutter_dotenv: ^6.0.0
   google_fonts: ^6.3.2
-  google_generative_ai: ^0.4.6
+  google_generative_ai: ^0.4.7
+  shared_preferences: ^2.5.3
 
 dev_dependencies:
   flutter_test:
